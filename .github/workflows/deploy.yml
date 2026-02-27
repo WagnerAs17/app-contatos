@@ -29,7 +29,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Find Python file in repository root
-        id: find_py
         run: |
           FILE=$(find . -maxdepth 1 -name "*.py" | head -n 1)
           if [ -z "$FILE" ]; then
@@ -42,8 +41,14 @@ jobs:
         run: |
           zip $ZIP_FILE $PY_FILE
 
-      - name: Deploy Lambda
+      - name: Deploy Lambda Code
         run: |
           aws lambda update-function-code \
             --function-name $LAMBDA_NAME \
             --zip-file fileb://$ZIP_FILE
+
+      - name: Update Lambda Environment Variables
+        run: |
+          aws lambda update-function-configuration \
+            --function-name $LAMBDA_NAME \
+            --environment "Variables={SNS_TOPIC_ARN=${{ secrets.SNS_TOPIC_ARN }}}"
