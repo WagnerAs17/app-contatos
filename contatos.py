@@ -1,79 +1,112 @@
 import json
 import boto3
 import uuid
-from botocore.exceptions import ClientError
 import os
+from botocore.exceptions import ClientError
 
-# Recursos AWS
-dynamodb = boto3.resource('dynamodb')
-sns = boto3.client('sns')
+HTTP_CREATED = 201
+HTTP_BAD_REQUEST = 400
+HTTP_INTERNAL_SERVER_ERROR = 500
+TABLE_NAME = "contatos"
+SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN")
 
-table = dynamodb.Table('contatos')
-
-# 🔥 Coloque aqui o ARN do seu SNS
-SNS_TOPIC_ARN = 'arn:aws:sns:us-east-2:189100467174:mova_contatos'
-
-SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN')
-
+dynamodb = boto3.resource("dynamodb")
+sns = boto3.client("sns")
+table = dynamodb.Table(TABLE_NAME)
 
 def lambda_handler(event, context):
     try:
-        body = json.loads(event.get('body', '{}'))
+        validar_configuracao()
 
-        nome = body.get('nome')
-        email = body.get('email')
-        telefone = body.get('telefone')
-        empresa = body.get('empresa')
-        cargo = body.get('cargo')
-        comentarios = body.get('comentarios')
-        plano = body.get('plano')
+        body = obter_body(event)
 
-        if not nome or not email or not plano or not telefone:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({
-                    'erro': 'Campos obrigatórios: nome, email, plano, telefone'
-                })
-            }
+        nome = body.get("nome")
+        email = body.get("email")
+        telefone = body.get("telefone")
+        empresa = body.get("empresa")
+        cargo = body.get("cargo")
+        comentarios = body.get("comentarios")
+        plano = body.get("plano")
 
-        # ✅ Gera UUID
-        id_contato = str(uuid.uuid4())
+        validar_campos(nome, email, telefone, plano)
+
+        id_contato = gerar_uuid()
 
         item = {
-            'id_contato': id_contato,
-            'email': email,
-            'nome': nome,
-            'telefone': telefone,
-            'empresa': empresa,
-            'cargo': cargo,
-            'comentarios': comentarios,
-            'plano': plano
+            "id_contato": id_contato,
+            "email": email,
+            "nome": nome,
+            "telefone": telefone,
+            "empresa": empresa,
+            "cargo": cargo,
+            "comentarios": comentarios,
+            "plano": plano
         }
 
-        # 🔹 Salva no DynamoDB
-        table.put_item(Item=item)
+        salvar_no_dynamodb(item)
+        publicar_no_sns(nome, email, telefone)
 
-        # 🔹 Publica no SNS
-        mensagem = f"Novo cliente acessou a plataforma do Mova. Entre em contato no numero {telefone} ou e-mail {email}"
-
-        sns.publish(
-            TopicArn=SNS_TOPIC_ARN,
-            Message=mensagem,
-            Subject=f'Novo contato cadastrado - {nome}'
+        return resposta(
+            HTTP_CREATED,
+            {
+                "mensagem": "Registro salvo e notificação enviada",
+                "id_contato": id_contato
+            }
         )
 
-        return {
-            'statusCode': 201,
-            'body': json.dumps({
-                'mensagem': 'Registro salvo e notificação enviada',
-                'id_contato': id_contato
-            })
-        }
+    except ValueError as erro_validacao:
+        return resposta(HTTP_BAD_REQUEST, {"erro": str(erro_validacao)})
 
-    except ClientError as e:
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'erro': e.response['Error']['Message']
-            })
-        }
+    except ClientError as erro_aws:
+        return resposta(
+            HTTP_INTERNAL_SERVER_ERROR,
+            {"erro": erro_aws.response["Error"]["Message"]}
+        )
+
+    except Exception as erro_generico:
+        return resposta(
+            HTTP_INTERNAL_SERVER_ERROR,
+            {"erro": str(erro_generico)}
+        )
+
+def validar_configuracao():
+    if not SNS_TOPIC_ARN:
+        raise Exception("Variável de ambiente SNS_TOPIC_ARN não configurada")
+
+
+def obter_body(event):
+    return json.loads(event.get("body", "{}"))
+
+def validar_campos(nome, email, telefone, plano):
+    if not nome or not email or not telefone or not plano:
+        raise ValueError(
+            "Campos obrigatórios: nome, email, telefone, plano"
+        )
+
+def gerar_uuid():
+    return str(uuid.uuid4())
+
+def salvar_no_dynamodb(item):
+    table.put_item(Item=item)
+
+def publicar_no_sns(nome, email, telefone):
+    mensagem = (
+        f"Novo cliente acessou a plataforma do Mova.\n"
+        f"Telefone: {telefone}\n"
+        f"E-mail: {email}"
+    )
+
+    sns.publish(
+        TopicArn=SNS_TOPIC_ARN,
+        Message=mensagem,
+        Subject=f"Novo contato cadastrado - {nome}"
+    )
+
+def resposta(status_code, corpo):
+    return {
+        "statusCode": status_code,
+        "headers": {
+            "Content-Type": "application/json"
+        },
+        "body": json.dumps(corpo)
+    }
