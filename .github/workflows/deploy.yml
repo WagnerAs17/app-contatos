@@ -1,0 +1,49 @@
+name: Deploy Lambda
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-2
+  LAMBDA_NAME: contatos
+  ZIP_FILE: function.zip
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Find Python file in repository root
+        id: find_py
+        run: |
+          FILE=$(find . -maxdepth 1 -name "*.py" | head -n 1)
+          if [ -z "$FILE" ]; then
+            echo "Nenhum arquivo .py encontrado na raiz!"
+            exit 1
+          fi
+          echo "PY_FILE=$FILE" >> $GITHUB_ENV
+
+      - name: Create ZIP package
+        run: |
+          zip $ZIP_FILE $PY_FILE
+
+      - name: Deploy Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name $LAMBDA_NAME \
+            --zip-file fileb://$ZIP_FILE
