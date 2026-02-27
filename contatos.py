@@ -16,6 +16,7 @@ table = dynamodb.Table(TABLE_NAME)
 
 def lambda_handler(event, context):
     try:
+        print("contatos")
         validar_configuracao()
 
         body = obter_body(event)
