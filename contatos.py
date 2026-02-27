@@ -2,6 +2,7 @@ import json
 import boto3
 import uuid
 from botocore.exceptions import ClientError
+import os
 
 # Recursos AWS
 dynamodb = boto3.resource('dynamodb')
@@ -11,6 +12,8 @@ table = dynamodb.Table('contatos')
 
 # 🔥 Coloque aqui o ARN do seu SNS
 SNS_TOPIC_ARN = 'arn:aws:sns:us-east-2:189100467174:mova_contatos'
+
+SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN')
 
 
 def lambda_handler(event, context):
