@@ -19,18 +19,18 @@ jobs:
       contents: read
 
     steps:
-      # 📥 Checkout do código
+      # 📥 Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 🔐 Autenticação AWS via OIDC
+      # 🔐 AWS OIDC
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 🔎 Detecta automaticamente o arquivo .py na raiz
+      # 🔎 Detecta arquivo .py
       - name: Detect Python file
         run: |
           FILE=$(find . -maxdepth 1 -name "*.py" | head -n 1)
@@ -45,36 +45,37 @@ jobs:
           echo "PY_FILE=$FILE" >> $GITHUB_ENV
           echo "HANDLER_NAME=$BASENAME.lambda_handler" >> $GITHUB_ENV
 
-          echo "Arquivo detectado: $FILE"
-          echo "Handler configurado: $BASENAME.lambda_handler"
-
-      # 📦 Cria o ZIP
+      # 📦 Cria ZIP
       - name: Create ZIP package
         run: |
           zip $ZIP_FILE $PY_FILE
 
-      # 🚀 Atualiza código
+      # 🚀 Update código
       - name: Update Lambda Code
         run: |
           aws lambda update-function-code \
             --function-name $LAMBDA_NAME \
             --zip-file fileb://$ZIP_FILE
 
-      # ⏳ Aguarda conclusão do update de código
+      # ⏳ Wait código
       - name: Wait for Code Update
         run: |
           aws lambda wait function-updated \
             --function-name $LAMBDA_NAME
 
-      # 🔄 Atualiza variável de ambiente (formato seguro)
+      # 🔄 Atualiza variáveis (JSON válido)
       - name: Update Lambda Configuration
         run: |
+          ENV_JSON=$(jq -n \
+            --arg SNS "${{ secrets.SNS_TOPIC_ARN }}" \
+            '{Variables: {SNS_TOPIC_ARN: $SNS}}')
+
           aws lambda update-function-configuration \
             --function-name $LAMBDA_NAME \
             --handler $HANDLER_NAME \
-            --environment Variables="SNS_TOPIC_ARN=${{ secrets.SNS_TOPIC_ARN }}"
+            --environment "$ENV_JSON"
 
-      # ⏳ Aguarda conclusão do update de configuração
+      # ⏳ Wait configuração
       - name: Wait for Configuration Update
         run: |
           aws lambda wait function-updated \
