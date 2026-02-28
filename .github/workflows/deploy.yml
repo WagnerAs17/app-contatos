@@ -19,17 +19,18 @@ jobs:
       contents: read
 
     steps:
+      # 📥 Checkout do código
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 🔐 Configura credenciais AWS via OIDC
+      # 🔐 Autenticação AWS via OIDC
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 🔎 Encontra automaticamente o arquivo .py na raiz
+      # 🔎 Detecta automaticamente o arquivo .py na raiz
       - name: Detect Python file
         run: |
           FILE=$(find . -maxdepth 1 -name "*.py" | head -n 1)
@@ -47,42 +48,33 @@ jobs:
           echo "Arquivo detectado: $FILE"
           echo "Handler configurado: $BASENAME.lambda_handler"
 
-      # 📦 Cria o pacote ZIP
+      # 📦 Cria o ZIP
       - name: Create ZIP package
         run: |
           zip $ZIP_FILE $PY_FILE
 
-      # 🚀 Atualiza código da Lambda
+      # 🚀 Atualiza código
       - name: Update Lambda Code
         run: |
           aws lambda update-function-code \
             --function-name $LAMBDA_NAME \
             --zip-file fileb://$ZIP_FILE
 
-      # ⏳ Aguarda finalização do update de código
+      # ⏳ Aguarda conclusão do update de código
       - name: Wait for Code Update
         run: |
           aws lambda wait function-updated \
             --function-name $LAMBDA_NAME
 
-      # 🔄 Atualiza variáveis preservando as existentes
-      - name: Update Environment Variables Safely
+      # 🔄 Atualiza variável de ambiente (formato seguro)
+      - name: Update Lambda Configuration
         run: |
-          CURRENT_VARS=$(aws lambda get-function-configuration \
-            --function-name $LAMBDA_NAME \
-            --query 'Environment.Variables' \
-            --output json)
-
-          UPDATED_VARS=$(echo $CURRENT_VARS | jq \
-            --arg SNS "${{ secrets.SNS_TOPIC_ARN }}" \
-            '. + {SNS_TOPIC_ARN: $SNS}')
-
           aws lambda update-function-configuration \
             --function-name $LAMBDA_NAME \
             --handler $HANDLER_NAME \
-            --environment "Variables=$UPDATED_VARS"
+            --environment Variables="SNS_TOPIC_ARN=${{ secrets.SNS_TOPIC_ARN }}"
 
-      # ⏳ Aguarda finalização da configuração
+      # ⏳ Aguarda conclusão do update de configuração
       - name: Wait for Configuration Update
         run: |
           aws lambda wait function-updated \
@@ -90,4 +82,3 @@ jobs:
 
       - name: Deploy Completed
         run: echo "Deploy finalizado com sucesso 🚀"
-        
